@@ -1,241 +1,96 @@
-// tile.js
+// tile.js — 랜덤 박스 3종 (게임 시작 시 맵에 고정 배치)
+// 박스 크기: 픽셀 4칸 (2x2 타일) → 플레이어가 근처 2칸 이내면 획득
 
-let specialTiles = [];
-let nextSpawnFrame = 0;
-let bonusTiles = [];
-let redTiles = [];
-
-const BONUS_COLORS = [
-  '#FF00FF',
-  '#FF6600',
-  '#FFFF00',
-  '#00FFFF',
-  '#FF0099',
-  '#FF9900',
-  '#00CCFF',
-  '#FF33CC',
-  '#CCFF00',
-  '#00FF00',
-];
-
-const BONUS_BOOST_MULTIPLIER = 1.6;
-const BONUS_DURATION_FRAMES = 300;
+let boxes = [];
 
 function initTiles(p) {
-  specialTiles = [];
-  bonusTiles = [];
-  redTiles = [];
-  scheduleNextSpawn(p);
-  _spawnBonusTiles(p);
-  _spawnRedTiles(p);
+  boxes = [];
+  _placeBoxes(p);
 }
 
-function _spawnBonusTiles(p) {
-  const total = ROWS * COLS;
-  const count = Math.floor(total / 50);
-  let placed = 0;
-  let attempts = 0;
-  while (placed < count && attempts < 1000) {
-    attempts++;
-    const r = Math.floor(p.random(2, ROWS - 2));
-    const c = Math.floor(p.random(2, COLS - 2));
-    if (_isAnyOccupied(r, c)) continue;
-    const color = BONUS_COLORS[Math.floor(p.random(BONUS_COLORS.length))];
-    bonusTiles.push({ r, c, color, active: true });
-    placed++;
+function _placeBoxes(p) {
+  const types = [BOX_TYPE_MEDICINE, BOX_TYPE_BLOOD, BOX_TYPE_ENERGY];
+  const midR = Math.floor(ROWS/2);
+  const midC = Math.floor(COLS/2);
+  for (const type of types) {
+    let placed = 0, attempts = 0;
+    while (placed < BOX_COUNT_EACH && attempts < 300) {
+      attempts++;
+      const r = Math.floor(p.random(5, ROWS-5));
+      const c = Math.floor(p.random(5, COLS-5));
+      // 시작 중앙 영역 근처 제외
+      if (Math.abs(r-midR) < 7 && Math.abs(c-midC) < 9) continue;
+      // 다른 박스와 최소 4타일 간격
+      if (boxes.some(b => Math.abs(b.r-r) < 4 && Math.abs(b.c-c) < 4)) continue;
+      boxes.push({ r, c, type });
+      placed++;
+    }
   }
 }
 
-function _spawnRedTiles(p) {
-  let placed = 0;
-  let attempts = 0;
-  while (placed < 30 && attempts < 1000) {
-    attempts++;
-    const r = Math.floor(p.random(2, ROWS - 2));
-    const c = Math.floor(p.random(2, COLS - 2));
-    if (_isAnyOccupied(r, c)) continue;
-    redTiles.push({ r, c, active: true });
-    placed++;
-  }
-}
-
-function _isAnyOccupied(r, c) {
-  if (bonusTiles.some(t => t.r === r && t.c === c)) return true;
-  if (redTiles.some(t => t.r === r && t.c === c)) return true;
-  return false;
-}
-
-function scheduleNextSpawn(p) {
-  const interval = Math.floor(p.random(SPECIAL_TILE_INTERVAL_MIN, SPECIAL_TILE_INTERVAL_MAX));
-  nextSpawnFrame = p.frameCount + interval;
-}
-
-function updateTiles(p) {
-  if (specialTiles.length < MAX_SPECIAL_TILES && p.frameCount >= nextSpawnFrame) {
-    spawnSpecialTile(p);
-    scheduleNextSpawn(p);
-  }
-}
-
-const TILE_TYPES_WEIGHTED = [
-  TILE_TYPE_BOMB,
-  TILE_TYPE_BOMB,
-  TILE_TYPE_ZOMBIE_SPAWN,
-  TILE_TYPE_ZOMBIE_SPAWN,
-  TILE_TYPE_BOOST_STEEL,
-];
-
-function spawnSpecialTile(p) {
-  let attempts = 0;
-  while (attempts < 100) {
-    const r = Math.floor(p.random(2, ROWS - 2));
-    const c = Math.floor(p.random(2, COLS - 2));
-    if (specialTiles.some(t => t.r === r && t.c === c)) { attempts++; continue; }
-    if (_isAnyOccupied(r, c)) { attempts++; continue; }
-    const type = TILE_TYPES_WEIGHTED[Math.floor(p.random(TILE_TYPES_WEIGHTED.length))];
-    specialTiles.push({ r, c, type, spawnFrame: p.frameCount });
-    return;
-  }
-}
+function updateTiles(p) {}
 
 function drawTiles(p) {
-  const half = TILE_SIZE / 2;
-
-  // special tiles
-  for (const tile of specialTiles) {
-    const x = tile.c * TILE_SIZE;
-    const y = tile.r * TILE_SIZE;
-    const blink = Math.sin(p.frameCount * 0.15) > 0;
+  for (const box of boxes) {
+    // 박스를 2x2 타일 크기(픽셀 4칸)로 그리기
+    const x = box.c * TILE_SIZE - TILE_SIZE/2;
+    const y = box.r * TILE_SIZE - TILE_SIZE/2;
+    const size = TILE_SIZE * 2; // 2배 크기
+    const blink = Math.sin(p.frameCount * 0.12) > 0;
 
     p.noStroke();
-    switch (tile.type) {
-      case TILE_TYPE_BOMB:         p.fill(blink ? '#FF6F00' : '#E65100'); break;
-      case TILE_TYPE_ZOMBIE_SPAWN: p.fill(blink ? '#6A1B9A' : '#4A148C'); break;
-      case TILE_TYPE_BOOST_STEEL:  p.fill(blink ? '#00838F' : '#006064'); break;
+    switch (box.type) {
+      case BOX_TYPE_MEDICINE: p.fill(blink ? '#43A047' : '#2E7D32'); break;
+      case BOX_TYPE_BLOOD:    p.fill(blink ? '#E53935' : '#B71C1C'); break;
+      case BOX_TYPE_ENERGY:   p.fill(blink ? '#FFD600' : '#F9A825'); break;
     }
-    p.rect(x, y, TILE_SIZE, TILE_SIZE, 3);
+    p.rect(x+1, y+1, size-2, size-2, 6);
 
+    // 아이콘 (2배 크기에 맞게)
     p.textAlign(p.CENTER, p.CENTER);
-    p.textSize(12);
+    p.textSize(16);
     p.fill(255);
     let icon = '';
-    switch (tile.type) {
-      case TILE_TYPE_BOMB:         icon = '\uD83D\uDCA3'; break;
-      case TILE_TYPE_ZOMBIE_SPAWN: icon = '\uD83E\uDDDF'; break;
-      case TILE_TYPE_BOOST_STEEL:  icon = '\u26A1'; break;
+    switch (box.type) {
+      case BOX_TYPE_MEDICINE: icon = '💊'; break;
+      case BOX_TYPE_BLOOD:    icon = '🩸'; break;
+      case BOX_TYPE_ENERGY:   icon = '⚡'; break;
     }
-    p.text(icon, x + half, y + half + 1);
-  }
-
-  // bonus tiles
-  for (const tile of bonusTiles) {
-    if (!tile.active) continue;
-    const cx = tile.c * TILE_SIZE + half;
-    const cy = tile.r * TILE_SIZE + half;
-
-    const pulse = Math.sin(p.frameCount * 0.18 + tile.r + tile.c) * 2;
-    const sz = TILE_SIZE - 2 + pulse;
-
-    const gc = p.color(tile.color);
-    gc.setAlpha(55);
-    p.fill(gc);
-    p.noStroke();
-    p.rect(cx - sz / 2 - 4, cy - sz / 2 - 4, sz + 8, sz + 8, 4);
-
-    p.fill(tile.color);
-    p.noStroke();
-    p.rect(cx - sz / 2, cy - sz / 2, sz, sz, 3);
-
-    p.fill(0, 0, 0, 200);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.textSize(10);
-    p.text('\u2605', cx, cy + 1);
-  }
-
-  // red tiles
-  for (const tile of redTiles) {
-    if (!tile.active) continue;
-    const cx = tile.c * TILE_SIZE + half;
-    const cy = tile.r * TILE_SIZE + half;
-
-    const pulse = Math.sin(p.frameCount * 0.2 + tile.r * 0.5 + tile.c * 0.5) * 2;
-    const sz = TILE_SIZE - 2 + pulse;
-
-    p.noStroke();
-    p.fill(255, 0, 0, 50);
-    p.rect(cx - sz / 2 - 4, cy - sz / 2 - 4, sz + 8, sz + 8, 4);
-
-    const blink = Math.floor(p.frameCount / 8) % 2 === 0;
-    p.fill(blink ? '#FF1744' : '#B71C1C');
-    p.noStroke();
-    p.rect(cx - sz / 2, cy - sz / 2, sz, sz, 3);
-
-    p.fill(255, 255, 255, 220);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.textSize(10);
-    p.text('\u2620', cx, cy + 1);
+    p.text(icon, x + size/2, y + size/2);
   }
 }
 
-function checkTilePickup(player, zombies, phase, p) {
-  for (let i = specialTiles.length - 1; i >= 0; i--) {
-    const tile = specialTiles[i];
-    if (tile.r === player.r && tile.c === player.c) {
-      applyTileEffect(tile, player, zombies, phase, p);
-      specialTiles.splice(i, 1);
-    }
-  }
-
-  for (let i = bonusTiles.length - 1; i >= 0; i--) {
-    const tile = bonusTiles[i];
-    if (!tile.active) continue;
-    if (tile.r === player.r && tile.c === player.c) {
-      player.bonusBoostTimer = BONUS_DURATION_FRAMES;
-      player.bonusBoostMultiplier = BONUS_BOOST_MULTIPLIER;
-      tile.active = false;
-    }
-  }
-
-  for (let i = redTiles.length - 1; i >= 0; i--) {
-    const tile = redTiles[i];
-    if (!tile.active) continue;
-    if (tile.r === player.r && tile.c === player.c) {
-      let spawnR, spawnC;
-      let attempts = 0;
-      do {
-        spawnR = Math.min(ROWS - 1, Math.max(0, tile.r + Math.floor(p.random(-5, 6))));
-        spawnC = Math.min(COLS - 1, Math.max(0, tile.c + Math.floor(p.random(-5, 6))));
-        attempts++;
-      } while (attempts < 20 && spawnR === player.r && spawnC === player.c);
-      zombies.push(new Zombie(spawnR, spawnC));
-      tile.active = false;
+// 플레이어가 박스 중심 2칸 이내면 획득 (넉넉한 판정)
+function checkTilePickup(player, zombiesArr, phase, p) {
+  for (let i = boxes.length-1; i >= 0; i--) {
+    const box = boxes[i];
+    const dist = Math.abs(box.r - player.r) + Math.abs(box.c - player.c);
+    if (dist <= 1) { // 1타일 이내면 획득
+      _applyBoxEffect(box, player, phase, p);
+      boxes.splice(i, 1);
     }
   }
 }
 
-function applyTileEffect(tile, player, zombies, phase, p) {
-  switch (tile.type) {
-    case TILE_TYPE_BOMB:
+function _applyBoxEffect(box, player, phase, p) {
+  switch (box.type) {
+    case BOX_TYPE_MEDICINE: {
       const owner = phase === PHASE_COOP ? OWNER_TEAM : player.owner;
       applyAreaBomb(player.r, player.c, owner);
       player.bombFlash = 20;
+      showNotification(player.id, '약 획득: 보너스 땅이 주어지는 약을 먹었다!', '#43A047');
       break;
-    case TILE_TYPE_ZOMBIE_SPAWN:
-      for (let i = 0; i < 3; i++) {
-        const spawnR = Math.min(ROWS - 1, Math.max(0, tile.r + Math.floor(p.random(-4, 5))));
-        const spawnC = Math.min(COLS - 1, Math.max(0, tile.c + Math.floor(p.random(-4, 5))));
-        zombies.push(new Zombie(spawnR, spawnC));
-      }
+    }
+    case BOX_TYPE_BLOOD: {
+      zombieBloodTimer = ZOMBIE_BLOOD_DURATION;
+      showNotification(player.id, '피 획득: 피를 밟았다 좀비속도가 이제 빨라진다!', '#E53935');
       break;
-    case TILE_TYPE_BOOST_STEEL:
+    }
+    case BOX_TYPE_ENERGY: {
       player.boostTimer = BOOST_DURATION;
       player.steelTailTimer = STEEL_TAIL_DURATION;
+      showNotification(player.id, '에너지드링크 획득: 속도와 강철꼬리를 갖는 에너지드링크를 마셨다!', '#FFD600');
       break;
+    }
   }
-}
-
-function removeTileAt(r, c) {
-  specialTiles = specialTiles.filter(t => !(t.r === r && t.c === c));
-  bonusTiles = bonusTiles.filter(t => !(t.r === r && t.c === c));
-  redTiles = redTiles.filter(t => !(t.r === r && t.c === c));
 }
