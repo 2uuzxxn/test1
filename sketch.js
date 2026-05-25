@@ -74,8 +74,13 @@ function draw() {
 function _triggerBetrayal() {
   betrayalTriggered = true;
   phase = PHASE_BETRAYAL;
-  const pA = playerA.alive ? {r:playerA.r,c:playerA.c} : {r:Math.floor(ROWS/2)-3,c:Math.floor(COLS/2)};
-  const pB = playerB.alive ? {r:playerB.r,c:playerB.c} : {r:Math.floor(ROWS/2)+3,c:Math.floor(COLS/2)};
+  
+  // 하드코딩된 오프셋 제거 및 동적 스폰 위치 계산 보강
+  const midR = Math.floor(ROWS/2);
+  const midC = Math.floor(COLS/2);
+  const pA = playerA.alive ? {r:playerA.r,c:playerA.c} : {r:midR-4,c:midC};
+  const pB = playerB.alive ? {r:playerB.r,c:playerB.c} : {r:midR+4,c:midC};
+  
   voronoiSplit(pA, pB);
   playerA.setPhase(PHASE_BETRAYAL);
   playerB.setPhase(PHASE_BETRAYAL);
@@ -85,13 +90,9 @@ function _triggerBetrayal() {
 }
 
 function _checkEndConditions(timeLeftSec) {
-  // 타이머 종료
   if (gameTimer <= 0) { _endGame('timer'); return; }
-
-  // 둘 다 사망
   if (!playerA.alive && !playerB.alive) { _endGame('both_dead'); return; }
 
-  // 협력/솔로 페이즈: 한 명 사망 처리
   if (phase === PHASE_COOP) {
     if (!playerA.alive || !playerB.alive) {
       phase = PHASE_SOLO;
@@ -103,7 +104,6 @@ function _checkEndConditions(timeLeftSec) {
     }
   }
 
-  // 배신 페이즈: 한 명 사망 → 즉시 종료
   if (phase === PHASE_BETRAYAL) {
     if (!playerA.alive && playerB.alive) { winner = 'B'; phase = PHASE_END; return; }
     if (!playerB.alive && playerA.alive) { winner = 'A'; phase = PHASE_END; return; }
@@ -116,17 +116,15 @@ function _reviveDeadPlayer() {
   const survivor = deadPlayerId === 'A' ? playerB : playerA;
   const dead     = deadPlayerId === 'A' ? playerA : playerB;
 
-  // 죽은 플레이어 부활 위치
-  const deadSpawnR = midR + (deadPlayerId === 'A' ? -3 : 3);
+  // 부활 위치를 유동적 비율 구조로 변경
+  const deadSpawnR = midR + (deadPlayerId === 'A' ? -5 : 5);
   const deadSpawnC = midC;
 
-  // Voronoi 분할로 살아있는 플레이어 영역 절반을 죽은 플레이어에게 할당
   voronoiSplit({r:deadSpawnR, c:deadSpawnC}, {r:survivor.r, c:survivor.c});
 
   const deadOwner = deadPlayerId === 'A' ? OWNER_A : OWNER_B;
   dead.revive(deadSpawnR, deadSpawnC, deadOwner);
 
-  // 배신 타이머 30초 발동
   gameTimer = EMERGENCY_BETRAYAL_TIME * FRAME_RATE;
   betrayalTriggered = true;
   phase = PHASE_BETRAYAL;
@@ -142,7 +140,6 @@ function _endGame(reason) {
   phase = PHASE_END;
   const counts = countTiles();
   if (reason === 'timer') {
-    // 둘 다 살아있으면 영역으로 승부
     if (playerA.alive && playerB.alive) {
       if (counts.A > counts.B) winner = 'A';
       else if (counts.B > counts.A) winner = 'B';
@@ -170,6 +167,7 @@ function keyPressed() {
 
 function mousePressed() {
   const cx=CANVAS_W/2, cy=CANVAS_H/2;
+  // 클릭 범위 판정을 유연한 중앙 상대 좌표식으로 완전 유지
   if (phase===PHASE_END &&
       mouseX>cx-80&&mouseX<cx+80&&mouseY>cy+58&&mouseY<cy+96) { resetGame(); }
   if (phase===PHASE_LOBBY &&
