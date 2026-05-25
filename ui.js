@@ -34,15 +34,15 @@ function drawUI(p, phase, timeLeft, counts) {
     p.text(`B: ${counts.B}`, barX+barW, 14);
   }
 
-  // ── 타임바 (남은 시간, 상단 4px 바 1개) ──
+  // ── 타임바 ──
   const totalTime = (phase === PHASE_SOLO) ? SOLO_TIME_LIMIT
                   : (phase === PHASE_BETRAYAL || betrayalTriggered) ? EMERGENCY_BETRAYAL_TIME
                   : GAME_TOTAL_TIME;
-  const timeFraction = Math.max(0, Math.min(1, timeLeft / GAME_TOTAL_TIME));
-  // 배경
+  const timeFraction = Math.max(0, Math.min(1, timeLeft / totalTime)); // totalTime 연동 오류 수정
+  
   p.noStroke(); p.fill(50);
   p.rect(0, hudH, CANVAS_W, 5);
-  // 남은 시간 바
+  
   const barColor = timeFraction > 0.4 ? '#4CAF50' : timeFraction > 0.15 ? '#FF9800' : '#F44336';
   p.fill(barColor);
   p.rect(0, hudH, CANVAS_W * timeFraction, 5);
@@ -69,18 +69,15 @@ function drawUI(p, phase, timeLeft, counts) {
   else if (phase === PHASE_SOLO){ p.fill('#FF9800'); p.text('[ 한 명 사망 — 제한시간! ]', CANVAS_W/2, 38); }
   else if (phase === PHASE_BETRAYAL){ p.fill('#FF5252'); p.text('[ 배신 페이즈 — 팀원도 적! ]', CANVAS_W/2, 38); }
 
-  // 배신 페이즈 테두리
   if (phase === PHASE_BETRAYAL) {
     const alpha = 80 + Math.sin(p.frameCount*0.1)*40;
     p.noFill(); p.stroke(255,50,50,alpha); p.strokeWeight(6);
     p.rect(3,3,CANVAS_W-6,CANVAS_H-6,2); p.noStroke();
   }
 
-  // 플레이어 상태
   _drawPlayerStatus(p, playerA, 10, hudH+10, 'A');
   _drawPlayerStatus(p, playerB, CANVAS_W-10, hudH+10, 'B');
 
-  // 좀비 피 효과
   if (zombieBloodTimer > 0) {
     p.fill('#E53935'); p.textSize(10); p.textAlign(p.CENTER, p.TOP);
     p.text(`🩸 좀비 가속 ${Math.ceil(zombieBloodTimer/FRAME_RATE)}초`, CANVAS_W/2, hudH+10);
