@@ -1,14 +1,15 @@
-// player.js
+// player.js — 플레이어 이동, 꼬리, 충돌 판정
 
 class Player {
-  constructor(id, startR, startC, keyUp, keyDown, keyLeft, keyRight) {
+  constructor(id, startR, startC, keyUp, keyDown, keyLeft, keyRight, initDr, initDc) {
     this.id = id;
     this.r = startR;
     this.c = startC;
-    this.dr = 0;
-    this.dc = 0;
-    this.nextDr = 0;
-    this.nextDc = 0;
+    // 게임 시작 시 자동으로 움직임 (초기 방향 설정)
+    this.dr = initDr;
+    this.dc = initDc;
+    this.nextDr = initDr;
+    this.nextDc = initDc;
 
     this.keys = { up: keyUp, down: keyDown, left: keyLeft, right: keyRight };
 
@@ -20,77 +21,64 @@ class Player {
     this.steelTailTimer = 0;
     this.bombFlash = 0;
     this.moveAccum = 0;
-
-    this.bonusBoostTimer = 0;
-    this.bonusBoostMultiplier = 1.6;
-
-    this.color = (id === 'A') ? COLOR_A : COLOR_B;
-    this.teamColor = COLOR_TEAM;
   }
 
   get displayColor() {
     if (this.owner === OWNER_TEAM) return COLOR_TEAM;
-    return (this.id === 'A') ? COLOR_A : COLOR_B;
+    return this.id === 'A' ? COLOR_A : COLOR_B;
   }
 
   setPhase(phase) {
-    if (phase === PHASE_COOP) {
-      this.owner = OWNER_TEAM;
-    } else {
-      this.owner = (this.id === 'A') ? OWNER_A : OWNER_B;
-    }
+    this.owner = phase === PHASE_COOP ? OWNER_TEAM
+               : this.id === 'A' ? OWNER_A : OWNER_B;
   }
 
   handleKeyPressed(kc) {
-    if (kc === this.keys.up    && this.dr !== 1)  { this.nextDr = -1; this.nextDc = 0; }
-    if (kc === this.keys.down  && this.dr !== -1) { this.nextDr = 1;  this.nextDc = 0; }
-    if (kc === this.keys.left  && this.dc !== 1)  { this.nextDr = 0;  this.nextDc = -1; }
-    if (kc === this.keys.right && this.dc !== -1) { this.nextDr = 0;  this.nextDc = 1; }
+    if (kc === this.keys.up    && this.nextDr !== 1)  { this.nextDr = -1; this.nextDc = 0; }
+    if (kc === this.keys.down  && this.nextDr !== -1) { this.nextDr = 1;  this.nextDc = 0; }
+    if (kc === this.keys.left  && this.nextDc !== 1)  { this.nextDr = 0;  this.nextDc = -1; }
+    if (kc === this.keys.right && this.nextDc !== -1) { this.nextDr = 0;  this.nextDc = 1; }
   }
 
   get speed() {
-    let base = PLAYER_SPEED;
-    if (this.boostTimer > 0) base *= BOOST_MULTIPLIER;
-    if (this.bonusBoostTimer > 0) base *= this.bonusBoostMultiplier;
-    return base;
+    return this.boostTimer > 0 ? PLAYER_SPEED * BOOST_MULTIPLIER : PLAYER_SPEED;
   }
 
-  get isTailInvincible() {
-    return this.steelTailTimer > 0 || this.bonusBoostTimer > 0;
-  }
-
-  update(otherPlayer, zombies, phase, p) {
+  update(otherPlayer, zombiesArr, phase, p) {
     if (!this.alive) return;
     if (this.boostTimer > 0) this.boostTimer--;
     if (this.steelTailTimer > 0) this.steelTailTimer--;
     if (this.bombFlash > 0) this.bombFlash--;
-    if (this.bonusBoostTimer > 0) this.bonusBoostTimer--;
 
     this.moveAccum += this.speed / FRAME_RATE;
     while (this.moveAccum >= 1) {
       this.moveAccum -= 1;
-      this._step(otherPlayer, zombies, phase, p);
+      this._step(otherPlayer, zombiesArr, phase, p);
       if (!this.alive) return;
     }
-    checkTilePickup(this, zombies, phase, p);
+    checkTilePickup(this, zombiesArr, phase, p);
   }
 
-  _step(otherPlayer, zombies, phase, p) {
+  _step(otherPlayer, zombiesArr, phase, p) {
     this.dr = this.nextDr;
     this.dc = this.nextDc;
     if (this.dr === 0 && this.dc === 0) return;
 
-    const nr = this.r + this.dr;
-    const nc = this.c + this.dc;
+    let nr = this.r + this.dr;
+    let nc = this.c + this.dc;
 
+    // 맵 경계: 이동 차단, 현재 위치 유지, 방향 초기화
     if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) {
-      this._die(); return;
+      this.nextDr = 0;
+      this.nextDc = 0;
+      this.dr = 0;
+      this.dc = 0;
+      return;
     }
 
-    const currentOwner = getOwner(this.r, this.c);
-    const onOwnedTile = (currentOwner === this.owner);
-
-    if (onOwnedTile) {
+    // 꼬리 관리
+    const onOwned = getOwner(this.r, this.c) === this.owner;
+    if (onOwned) {
       if (this.tail.length > 0) {
         const tailSet = new Set(this.tail.map(t => `${t.r},${t.c}`));
         floodFillEnclosed(tailSet, this.owner, p);
@@ -100,29 +88,49 @@ class Player {
       this.tail.push({ r: this.r, c: this.c });
     }
 
+    // 자기 꼬리 충돌 → 죽음 (강철꼬리면 무적)
     if (this.tail.some(t => t.r === nr && t.c === nc)) {
-      if (!this.isTailInvincible) {
-        this._die(); return;
-      }
+      if (this.steelTailTimer <= 0) { this._die(); return; }
     }
 
+    // 머리끼리 충돌 → 죽지 않고 밀려남
+    if (otherPlayer && otherPlayer.alive && otherPlayer.r === nr && otherPlayer.c === nc) {
+      // 서로 반대 방향으로 밀림
+      this.nextDr = -this.dr;
+      this.nextDc = -this.dc;
+      return; // 이동 취소
+    }
+
+    // 상대 꼬리 충돌 → 꼬리 끊기 → 상대 즉사 (모든 페이즈, 강철꼬리 예외)
     if (otherPlayer && otherPlayer.alive) {
-      const hitsOtherTail = otherPlayer.tail.some(t => t.r === nr && t.c === nc);
-      if (hitsOtherTail) {
-        if (this.isTailInvincible && !otherPlayer.isTailInvincible) {
-          otherPlayer._cutTailAt(nr, nc);
-        } else if (otherPlayer.isTailInvincible) {
-          this._die(); return;
+      const hitIdx = otherPlayer.tail.findIndex(t => t.r === nr && t.c === nc);
+      if (hitIdx !== -1) {
+        if (otherPlayer.steelTailTimer > 0) {
+          // 상대 강철꼬리: 내가 밀려남
+          this.nextDr = -this.dr;
+          this.nextDc = -this.dc;
+          return;
         } else {
+          // 꼬리 끊기 → 상대 즉사
           otherPlayer._cutTailAt(nr, nc);
         }
       }
     }
 
-    for (const z of zombies) {
+    // 좀비 본체와 머리 충돌 → 밀려남 (죽지 않음)
+    for (const z of zombiesArr) {
       if (!z.alive) continue;
-      if (z.r === nr && z.c === nc) { this._die(); return; }
-      if (z.tail.some(t => t.r === nr && t.c === nc)) { this._die(); return; }
+      if (z.r === nr && z.c === nc) {
+        // 좀비 본체와 머리 충돌: 밀려남
+        this.nextDr = -this.dr;
+        this.nextDc = -this.dc;
+        return;
+      }
+      // 좀비 꼬리 밟으면 → 좀비 사망 (플레이어 생존)
+      if (z.tail.some(t => t.r === nr && t.c === nc)) {
+        z.cutTailAt(nr, nc);
+        break;
+      }
     }
 
     this.r = nr;
@@ -136,6 +144,7 @@ class Player {
         setOwner(this.tail[i].r, this.tail[i].c, OWNER_NONE);
       }
       this.tail.splice(idx);
+      this._die();
     }
   }
 
@@ -145,62 +154,43 @@ class Player {
     this.tail = [];
   }
 
+  revive(r, c, owner) {
+    this.alive = true;
+    this.r = r; this.c = c;
+    this.dr = 0; this.dc = 1;
+    this.nextDr = 0; this.nextDc = 1;
+    this.tail = [];
+    this.moveAccum = 0;
+    this.boostTimer = 0;
+    this.steelTailTimer = 0;
+    this.owner = owner;
+  }
+
   draw(p) {
     if (!this.alive) return;
-
-    const half = TILE_SIZE / 2;
-
-    let tailCol = this.displayColor;
-    if (this.steelTailTimer > 0) tailCol = '#B0BEC5';
-    else if (this.bonusBoostTimer > 0) tailCol = '#FFFFFF';
-
+    // 꼬리
+    const tailCol = this.steelTailTimer > 0 ? '#B0BEC5' : this.displayColor;
     p.noStroke();
     for (const t of this.tail) {
       p.fill(tailCol);
-      p.rect(t.c * TILE_SIZE + 3, t.r * TILE_SIZE + 3, TILE_SIZE - 6, TILE_SIZE - 6, 2);
+      p.rect(t.c*TILE_SIZE+2, t.r*TILE_SIZE+2, TILE_SIZE-4, TILE_SIZE-4, 1);
     }
-
-    const x = this.c * TILE_SIZE;
-    const y = this.r * TILE_SIZE;
-
-    if (this.bonusBoostTimer > 0) {
-      const glowAlpha = 60 + Math.sin(p.frameCount * 0.3) * 30;
-      p.fill(255, 255, 0, glowAlpha);
-      p.noStroke();
-      p.rect(x - 4, y - 4, TILE_SIZE + 8, TILE_SIZE + 8, 6);
-    }
-
+    const x = this.c*TILE_SIZE, y = this.r*TILE_SIZE;
     if (this.boostTimer > 0) {
-      p.fill(0, 230, 230, 60);
-      p.noStroke();
-      p.rect(x - 3, y - 3, TILE_SIZE + 6, TILE_SIZE + 6, 6);
+      p.fill(0, 230, 230, 60); p.noStroke();
+      p.rect(x-2, y-2, TILE_SIZE+4, TILE_SIZE+4, 4);
     }
-
-    if (this.bombFlash > 0 && Math.floor(p.frameCount / 3) % 2 === 0) {
-      p.fill(255, 200, 0, 120);
-      p.noStroke();
-      p.rect(x - 4, y - 4, TILE_SIZE + 8, TILE_SIZE + 8, 6);
+    if (this.bombFlash > 0 && Math.floor(p.frameCount/3) % 2 === 0) {
+      p.fill(255, 200, 0, 120); p.noStroke();
+      p.rect(x-3, y-3, TILE_SIZE+6, TILE_SIZE+6, 4);
     }
-
-    p.fill(this.displayColor);
-    p.noStroke();
-    p.rect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2, 5);
-
-    p.fill(255);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.textSize(10);
-    p.text(this.id, x + half, y + half);
-
+    p.fill(this.displayColor); p.noStroke();
+    p.rect(x+1, y+1, TILE_SIZE-2, TILE_SIZE-2, 3);
+    p.fill(255); p.textAlign(p.CENTER, p.CENTER); p.textSize(8);
+    p.text(this.id, x+TILE_SIZE/2, y+TILE_SIZE/2);
     if (this.steelTailTimer > 0) {
-      p.fill(255, 255, 255, 200);
-      p.textSize(7);
-      p.text('S', x + TILE_SIZE - 4, y + 4);
-    }
-
-    if (this.bonusBoostTimer > 0) {
-      p.fill(255, 255, 0, 230);
-      p.textSize(7);
-      p.text('\u2605', x + 4, y + 4);
+      p.fill(255,255,255,200); p.textSize(6);
+      p.text('⚙', x+TILE_SIZE-3, y+3);
     }
   }
 }
@@ -208,13 +198,14 @@ class Player {
 let playerA, playerB;
 
 function initPlayers() {
-  const midR = Math.floor(ROWS / 2);
-  const midC = Math.floor(COLS / 2);
+  const midR = Math.floor(ROWS/2);
+  const midC = Math.floor(COLS/2);
+  // 시작 시 자동으로 움직임: A는 왼쪽, B는 오른쪽
+  playerA = new Player('A', midR, midC-4, 87, 83, 65, 68, 0, -1);
+  playerB = new Player('B', midR, midC+4, 38, 40, 37, 39, 0,  1);
 
-  playerA = new Player('A', midR, midC - 2, 87, 83, 65, 68);
-  playerB = new Player('B', midR, midC + 2, 38, 40, 37, 39);
-
-  for (let r = midR - 2; r <= midR + 2; r++)
-    for (let c = midC - 4; c <= midC + 4; c++)
+  // 공동 시작 영역 (맵 크기에 맞춰 살짝 넓혀줌)
+  for (let r = midR-3; r <= midR+3; r++)
+    for (let c = midC-6; c <= midC+6; c++)
       setOwner(r, c, OWNER_TEAM);
 }
