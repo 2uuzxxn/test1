@@ -14,14 +14,17 @@ function _placeBoxes(p) {
   const midC = Math.floor(COLS/2);
   for (const type of types) {
     let placed = 0, attempts = 0;
-    while (placed < BOX_COUNT_EACH && attempts < 300) {
+    while (placed < BOX_COUNT_EACH && attempts < 500) { // 맵이 넓어졌으므로 시도 횟수 상향
       attempts++;
+      // 안전하게 외곽 경계 안쪽으로 배치
       const r = Math.floor(p.random(5, ROWS-5));
       const c = Math.floor(p.random(5, COLS-5));
-      // 시작 중앙 영역 근처 제외
-      if (Math.abs(r-midR) < 7 && Math.abs(c-midC) < 9) continue;
-      // 다른 박스와 최소 4타일 간격
+      
+      // 시작 중앙 영역 근처 제외 (맵 크기에 맞게 비례하도록 수정)
+      if (Math.abs(r-midR) < 10 && Math.abs(c-midC) < 12) continue;
+      // 다른 박스와 최소 4타일 간격 유지
       if (boxes.some(b => Math.abs(b.r-r) < 4 && Math.abs(b.c-c) < 4)) continue;
+      
       boxes.push({ r, c, type });
       placed++;
     }
@@ -32,10 +35,10 @@ function updateTiles(p) {}
 
 function drawTiles(p) {
   for (const box of boxes) {
-    // 박스를 2x2 타일 크기(픽셀 4칸)로 그리기
+    // 박스를 2x2 타일 크기로 그리기
     const x = box.c * TILE_SIZE - TILE_SIZE/2;
     const y = box.r * TILE_SIZE - TILE_SIZE/2;
-    const size = TILE_SIZE * 2; // 2배 크기
+    const size = TILE_SIZE * 2; 
     const blink = Math.sin(p.frameCount * 0.12) > 0;
 
     p.noStroke();
@@ -44,11 +47,11 @@ function drawTiles(p) {
       case BOX_TYPE_BLOOD:    p.fill(blink ? '#E53935' : '#B71C1C'); break;
       case BOX_TYPE_ENERGY:   p.fill(blink ? '#FFD600' : '#F9A825'); break;
     }
-    p.rect(x+1, y+1, size-2, size-2, 6);
+    p.rect(x+1, y+1, size-2, size-2, 4); // 타일 크기가 작아졌으므로 라운드값 조절
 
-    // 아이콘 (2배 크기에 맞게)
+    // 아이콘 (타일 크기가 줄어들었으므로 서체 크기 최적화)
     p.textAlign(p.CENTER, p.CENTER);
-    p.textSize(16);
+    p.textSize(11);
     p.fill(255);
     let icon = '';
     switch (box.type) {
@@ -60,12 +63,12 @@ function drawTiles(p) {
   }
 }
 
-// 플레이어가 박스 중심 2칸 이내면 획득 (넉넉한 판정)
+// 플레이어가 박스 중심 1칸 이내면 획득
 function checkTilePickup(player, zombiesArr, phase, p) {
   for (let i = boxes.length-1; i >= 0; i--) {
     const box = boxes[i];
     const dist = Math.abs(box.r - player.r) + Math.abs(box.c - player.c);
-    if (dist <= 1) { // 1타일 이내면 획득
+    if (dist <= 1) { 
       _applyBoxEffect(box, player, phase, p);
       boxes.splice(i, 1);
     }
